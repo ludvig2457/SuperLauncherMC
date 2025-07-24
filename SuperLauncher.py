@@ -5,13 +5,15 @@ from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QLabel, QFrame, QStackedWidget, QButtonGroup, QLineEdit, QComboBox,
     QProgressBar, QSpacerItem, QSizePolicy, QMessageBox, QScrollArea, QDialog,
-    QCheckBox, QFormLayout
+    QCheckBox, QFormLayout, QListWidget, QListWidgetItem, QTextEdit, QSpinBox,
+    QRadioButton, QFileDialog
 )
 from PyQt6.QtGui import QPixmap, QCursor, QGuiApplication
 
 from minecraft_launcher_lib.utils import get_minecraft_directory, get_version_list
 from minecraft_launcher_lib.install import install_minecraft_version
 from minecraft_launcher_lib.command import get_minecraft_command
+from tqdm import tqdm
 
 from random_username.generate import generate_username
 from uuid import uuid1
@@ -22,6 +24,34 @@ from pathlib import Path
 import json
 import shutil
 import psutil
+import zipfile
+
+CONFIG_FILE = "settings.json"
+
+def load_config():
+    if os.path.exists(CONFIG_FILE):
+        try:
+            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    # Если файла нет или ошибка, возвращаем значения по умолчанию
+    return {
+        "java_path": "",
+        "ram": 4096,
+        "language": "ru",
+        "theme": "dark",
+        "launch_mode": "launcher_lib"
+    }
+
+def save_config(config):
+    try:
+        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+            json.dump(config, f, ensure_ascii=False, indent=4)
+    except Exception as e:
+        print("Ошибка сохранения настроек:", e)
+
+MODRINTH_API = "https://api.modrinth.com/v2"
 
 # Путь к папке Minecraft
 minecraft_directory = get_minecraft_directory()
@@ -59,14 +89,17 @@ class LaunchThread(QThread):
         self.launch_setup_signal.connect(self.launch_setup)
         self.version_id = ''
         self.username = ''
+        self.loader_type = 'vanilla'  # по умолчанию ванилла
         self.progress = 0
         self.progress_max = 100
         self.progress_label = ''
 
     def launch_setup(self, version_id, username):
-        self.version_id = version_id
         self.username = username
-    
+        # Убираем проверку forge и fabric
+        self.loader_type = "vanilla"
+        self.version_id = version_id
+
     def update_progress_label(self, value):
         self.progress_label = value
         self.progress_update_signal.emit(self.progress, self.progress_max, self.progress_label)
@@ -82,16 +115,18 @@ class LaunchThread(QThread):
     def run(self):
         self.state_update_signal.emit(True)
         try:
-            print("Используемый minecraft_directory:", minecraft_directory)
-            print("Файлы в minecraft_directory:", os.listdir(minecraft_directory))
-
-            install_minecraft_version(versionid=self.version_id, minecraft_directory=minecraft_directory, callback={
-                'setStatus': self.update_progress_label,
-                'setProgress': self.update_progress,
-                'setMax': self.update_progress_max
-            })
-
-            print(f"Версия {self.version_id} установлена, запускаем игру...")
+            if self.loader_type == "vanilla":
+                install_minecraft_version(
+                    versionid=self.version_id,
+                    minecraft_directory=minecraft_directory,
+                    callback={
+                        'setStatus': self.update_progress_label,
+                        'setProgress': self.update_progress,
+                        'setMax': self.update_progress_max
+                    }
+                )
+            else:
+                raise Exception("Неизвестный тип загрузчика")
 
             if self.username == '':
                 self.username = generate_username()[0]
@@ -113,10 +148,11 @@ class LaunchThread(QThread):
             print("Ошибка при запуске Minecraft:", e)
         finally:
             self.state_update_signal.emit(False)
-# Функция возвращает все версии без фильтрации (Vanilla + Snapshots + Fabric + Forge)
+
+    # Функция возвращает все версии без фильтрации (Vanilla + Snapshots + Fabric + Forge)
 def get_all_versions():
     versions = get_version_list()  # vanilla + snapshots
-    
+
     versions_dir = os.path.join(minecraft_directory, 'versions')
     if os.path.exists(versions_dir):
         for folder in os.listdir(versions_dir):
@@ -124,6 +160,7 @@ def get_all_versions():
             if os.path.isdir(full_path):
                 if not any(v['id'] == folder for v in versions):
                     versions.append({'id': folder})
+
     return versions
 
 class MinecraftLauncherPage(QWidget):
@@ -197,6 +234,77 @@ class MinecraftLauncherPage(QWidget):
         for version in versions:
             self.version_select.addItem(version['id'])
 
+class SettingsPage(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.config = load_config()
+
+        layout = QVBoxLayout()
+        layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+
+        # Тема
+        layout.addWidget(QLabel("Тема:"))
+        self.theme_combo = QComboBox()
+        self.theme_combo.addItems(["dark", "light"])
+        self.theme_combo.setCurrentText(self.config.get("theme", "dark"))
+        layout.addWidget(self.theme_combo)
+
+        # Язык
+        layout.addWidget(QLabel("Язык:"))
+        self.lang_combo = QComboBox()
+        self.lang_combo.addItems(["ru", "en"])
+        self.lang_combo.setCurrentText(self.config.get("language", "ru"))
+        layout.addWidget(self.lang_combo)
+
+        # Способ запуска
+        layout.addWidget(QLabel("Способ запуска Minecraft:"))
+        self.rb_launcher_lib = QRadioButton("minecraft-launcher-lib (по умолчанию)")
+        self.rb_java = QRadioButton("Java (указать путь)")
+        layout.addWidget(self.rb_launcher_lib)
+        layout.addWidget(self.rb_java)
+
+        launch_mode = self.config.get("launch_mode", "launcher_lib")
+        if launch_mode == "java":
+            self.rb_java.setChecked(True)
+        else:
+            self.rb_launcher_lib.setChecked(True)
+
+        # Путь к Java
+        layout.addWidget(QLabel("Путь к Java (если выбран Java):"))
+        self.java_path_input = QLineEdit(self.config.get("java_path", ""))
+        layout.addWidget(self.java_path_input)
+        btn_browse_java = QPushButton("Выбрать путь к Java")
+        layout.addWidget(btn_browse_java)
+
+        btn_browse_java.clicked.connect(self.browse_java)
+
+        # Активность поля пути и кнопки в зависимости от выбора
+        self.java_path_input.setEnabled(self.rb_java.isChecked())
+        btn_browse_java.setEnabled(self.rb_java.isChecked())
+        self.rb_java.toggled.connect(self.java_path_input.setEnabled)
+        self.rb_java.toggled.connect(btn_browse_java.setEnabled)
+
+        # Кнопка сохранить
+        self.save_btn = QPushButton("Сохранить настройки")
+        layout.addWidget(self.save_btn)
+        self.save_btn.clicked.connect(self.save_settings)
+
+        self.setLayout(layout)
+
+    def browse_java(self):
+        file, _ = QFileDialog.getOpenFileName(self, "Выберите java.exe", "", "Executable Files (*.exe);;All Files (*)")
+        if file:
+            self.java_path_input.setText(file)
+
+    def save_settings(self):
+        self.config["theme"] = self.theme_combo.currentText()
+        self.config["language"] = self.lang_combo.currentText()
+        self.config["launch_mode"] = "java" if self.rb_java.isChecked() else "launcher_lib"
+        self.config["java_path"] = self.java_path_input.text()
+        save_config(self.config)
+        if self.parent():
+            self.parent().apply_settings()
+
 class ModDownloadThread(QThread):
     progress = pyqtSignal(int)
     finished = pyqtSignal(str)
@@ -210,22 +318,16 @@ class ModDownloadThread(QThread):
         try:
             with requests.get(self.url, stream=True) as r:
                 r.raise_for_status()
-                total_length_str = r.headers.get('content-length')
-                total_length = int(total_length_str) if total_length_str and total_length_str.isdigit() else 0
-
+                total = int(r.headers.get("content-length", 0))
                 downloaded = 0
-                if total_length == 0:
-                    self.progress.emit(-1)  # неопределённый прогресс
 
-                with open(self.save_path, 'wb') as f:
+                with open(self.save_path, "wb") as f:
                     for chunk in r.iter_content(chunk_size=8192):
                         if chunk:
                             f.write(chunk)
                             downloaded += len(chunk)
-                            if total_length > 0:
-                                percent = int(downloaded * 100 / total_length)
-                                self.progress.emit(percent)
-
+                            if total > 0:
+                                self.progress.emit(int(downloaded * 100 / total))
             self.finished.emit(self.save_path)
         except Exception as e:
             self.finished.emit(f"ERROR: {e}")
@@ -236,50 +338,129 @@ class ModsPage(QWidget):
         self.layout = QVBoxLayout(self)
         self.layout.setContentsMargins(15, 15, 15, 15)
 
-        title = QLabel("🧩 Моды Minecraft")
-        title.setStyleSheet("font-size: 26px; font-weight: bold; margin-bottom: 15px; color: white;")
-        self.layout.addWidget(title)
-
         self.mods_dir = os.path.join(minecraft_directory, "mods")
         os.makedirs(self.mods_dir, exist_ok=True)
 
-        self.available_mods = [
-            {
-                'name': 'OptiFine',
-                'description': 'Улучшает производительность и графику Minecraft',
-                'url': 'https://optifine.net/downloadx?f=OptiFine_1.21.1_HD_U_J1.jar&x=793931c39fe7f0baea19b4206019f754'
-            },
-            {
-                'name': 'JEI',
-                'description': 'Just Enough Items — просмотр рецептов',
-                'url': 'https://cdn.modrinth.com/data/u6dRKJwZ/versions/PFUWbjRa/jei-1.21.1-forge-19.22.0.315.jar'
-            },
-        ]
+        title = QLabel("🧩 Моды из Modrinth")
+        title.setStyleSheet("font-size: 26px; font-weight: bold; margin-bottom: 10px; color: white;")
+        self.layout.addWidget(title)
 
-        for mod in self.available_mods:
-            self.add_mod_widget(mod)
+        self.search_input = QLineEdit()
+        self.search_input.setPlaceholderText("🔍 Найти мод...")
+        self.search_input.returnPressed.connect(self.search_mods)
+        self.layout.addWidget(self.search_input)
 
-    def add_mod_widget(self, mod):
-        widget = QWidget()
-        layout = QHBoxLayout(widget)
-        layout.setContentsMargins(5, 5, 5, 5)
+        self.results_list = QListWidget()
+        self.results_list.setIconSize(QSize(64, 64))
+        self.layout.addWidget(self.results_list)
 
-        label = QLabel(f"<b>{mod['name']}</b>: {mod['description']}")
-        label.setStyleSheet("color: white;")
-        layout.addWidget(label)
+        buttons_layout = QHBoxLayout()
 
-        btn = QPushButton("Установить")
-        btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn.clicked.connect(lambda _, m=mod: self.install_mod(m))
-        layout.addWidget(btn)
+        open_folder_button = QPushButton("📂 Открыть папку модов")
+        open_folder_button.clicked.connect(self.open_mods_folder)
+        buttons_layout.addWidget(open_folder_button)
 
-        self.layout.addWidget(widget)
+        delete_all_button = QPushButton("🗑 Удалить все моды")
+        delete_all_button.setStyleSheet("background-color: #d9534f; color: white;")
+        delete_all_button.clicked.connect(self.delete_all_mods)
+        buttons_layout.addWidget(delete_all_button)
 
-    def install_mod(self, mod):
-        save_path = os.path.join(self.mods_dir, f"{mod['name']}.jar")
+        self.layout.addLayout(buttons_layout)
 
+        self.load_featured_mods()
+
+    def load_featured_mods(self):
+        try:
+            url = f"{MODRINTH_API}/search?limit=20&index=relevance"
+            resp = requests.get(url)
+            data = resp.json()
+            self.results_list.clear()
+            for hit in data["hits"]:
+                item = QListWidgetItem(f"{hit['title']} — {hit.get('description', '')}")
+                item.setData(Qt.ItemDataRole.UserRole, hit["project_id"])
+                self.results_list.addItem(item)
+            self.results_list.itemClicked.connect(self.show_mod_dialog)
+        except Exception as e:
+            QMessageBox.critical(self, "Ошибка", str(e))
+
+    def search_mods(self):
+        query = self.search_input.text()
+        if not query.strip():
+            return
+        try:
+            url = f"{MODRINTH_API}/search?query={query}"
+            resp = requests.get(url)
+            data = resp.json()
+            self.results_list.clear()
+            for hit in data["hits"]:
+                item = QListWidgetItem(f"{hit['title']} — {hit.get('description', '')}")
+                item.setData(Qt.ItemDataRole.UserRole, hit["project_id"])
+                self.results_list.addItem(item)
+            self.results_list.itemClicked.connect(self.show_mod_dialog)
+        except Exception as e:
+            QMessageBox.critical(self, "Ошибка поиска", str(e))
+
+    def show_mod_dialog(self, item):
+        project_id = item.data(Qt.ItemDataRole.UserRole)
+        try:
+            versions_url = f"{MODRINTH_API}/project/{project_id}/version"
+            resp = requests.get(versions_url)
+            versions = resp.json()
+
+            if not versions:
+                QMessageBox.warning(self, "Нет доступных версий", "Для этого мода пока нет доступных загрузок.")
+                return
+
+            dialog = QDialog(self)
+            dialog.setWindowTitle("Установка мода")
+            layout = QVBoxLayout(dialog)
+
+            version_box = QComboBox()
+
+            version_loader_map = {}
+            for v in versions:
+                mc_versions = v["game_versions"]
+                loaders = v["loaders"]
+                if not mc_versions or not loaders:
+                    continue
+                display_text = f"{mc_versions[0]} | {loaders[0]}"
+                version_loader_map[display_text] = v
+
+            if not version_loader_map:
+                QMessageBox.warning(self, "Нет поддерживаемых билдов", "Нет совместимых версий для установки.")
+                return
+
+            version_box.addItems(version_loader_map.keys())
+            layout.addWidget(QLabel("Версия Minecraft и ядро:"))
+            layout.addWidget(version_box)
+
+            install_button = QPushButton("Установить")
+            layout.addWidget(install_button)
+
+            install_button.clicked.connect(
+                lambda: self.download_selected_mod(version_loader_map[version_box.currentText()], dialog)
+            )
+
+            dialog.exec()
+
+        except Exception as e:
+            QMessageBox.critical(self, "Ошибка", str(e))
+
+    def download_selected_mod(self, version_data, dialog):
+        files = version_data["files"]
+        for file in files:
+            if file["filename"].endswith(".jar"):
+                url = file["url"]
+                filename = file["filename"]
+                save_path = os.path.join(self.mods_dir, filename)
+                dialog.close()
+                self.start_download(url, save_path)
+                return
+        QMessageBox.warning(self, "Файл не найден", "Не удалось найти подходящий .jar файл.")
+
+    def start_download(self, url, save_path):
         self.progress_dialog = QDialog(self)
-        self.progress_dialog.setWindowTitle(f"Загрузка мода: {mod['name']}")
+        self.progress_dialog.setWindowTitle("Загрузка мода")
         self.progress_dialog.setModal(True)
 
         dialog_layout = QVBoxLayout(self.progress_dialog)
@@ -289,7 +470,7 @@ class ModsPage(QWidget):
 
         self.progress_dialog.show()
 
-        self.download_thread = ModDownloadThread(mod['url'], save_path)
+        self.download_thread = ModDownloadThread(url, save_path)
         self.download_thread.progress.connect(self.progress_bar.setValue)
         self.download_thread.finished.connect(self.on_download_finished)
         self.download_thread.start()
@@ -297,9 +478,32 @@ class ModsPage(QWidget):
     def on_download_finished(self, result):
         self.progress_dialog.hide()
         if result.startswith("ERROR:"):
-            QMessageBox.critical(self, "Ошибка", f"Ошибка загрузки:\n{result}")
+            QMessageBox.critical(self, "Ошибка загрузки", result)
         else:
             QMessageBox.information(self, "Готово", f"Мод успешно установлен:\n{result}")
+
+    def open_mods_folder(self):
+        path = os.path.realpath(self.mods_dir)
+        if sys.platform == "win32":
+            os.startfile(path)
+        elif sys.platform == "darwin":
+            os.system(f"open \"{path}\"")
+        else:
+            os.system(f"xdg-open \"{path}\"")
+
+    def delete_all_mods(self):
+        confirm = QMessageBox.question(self, "Подтверждение",
+            "Ты уверен, что хочешь удалить **все моды**?", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        if confirm == QMessageBox.StandardButton.Yes:
+            deleted = 0
+            for file in os.listdir(self.mods_dir):
+                if file.endswith(".jar"):
+                    try:
+                        os.remove(os.path.join(self.mods_dir, file))
+                        deleted += 1
+                    except Exception as e:
+                        QMessageBox.warning(self, "Ошибка", f"Не удалось удалить {file}: {e}")
+            QMessageBox.information(self, "Готово", f"Удалено модов: {deleted}")
 
 class NewsPage(QWidget):
     def __init__(self):
@@ -1128,12 +1332,11 @@ pause
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("SuperLauncher 1.4.0.3")
+        self.setWindowTitle("SuperLauncher 1.4.0.5")
         self.resize(1080, 720)
 
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
-
         central_widget.setStyleSheet("background-color: #1e1e1e;")
 
         main_layout = QHBoxLayout(central_widget)
@@ -1175,6 +1378,7 @@ class MainWindow(QMainWindow):
         sidebar_layout.setContentsMargins(0, 20, 0, 20)
         sidebar_layout.setSpacing(20)
 
+        # Кнопки
         self.btn_home = QPushButton("🏠")
         self.btn_builds = QPushButton("🧩")
         self.btn_news = QPushButton("📢")
@@ -1186,49 +1390,53 @@ class MainWindow(QMainWindow):
         self.button_group = QButtonGroup()
         self.button_group.setExclusive(True)
 
-        for i, btn in enumerate((
+        buttons = [
             self.btn_home, self.btn_builds, self.btn_news,
             self.btn_updates, self.btn_servers,
             self.btn_settings, self.btn_minecraft
-        )):
+        ]
+
+        for i, btn in enumerate(buttons):
             btn.setCheckable(True)
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
             self.button_group.addButton(btn, i)
-
-        self.btn_home.setChecked(True)
-
-        for btn in (
-            self.btn_home, self.btn_builds, self.btn_news,
-            self.btn_updates, self.btn_servers,
-            self.btn_settings, self.btn_minecraft
-        ):
             sidebar_layout.addWidget(btn)
+
         sidebar_layout.addStretch()
 
         self.pages = QStackedWidget()
         self.pages.addWidget(self.create_page("🏠 Добро пожаловать в SuperLauncher!"))      # 0
-        self.builds_page = ModsPage()
+        self.builds_page = ModsPage()  # Твой класс, предполагается определён
         self.pages.addWidget(self.builds_page)  # 1
-        self.news_page = NewsPage()
+        self.news_page = NewsPage()  # Твой класс
         self.pages.addWidget(self.news_page)                                               # 2
-        self.updates_page = UpdatesPage()
+        self.updates_page = UpdatesPage()  # Твой класс
         self.pages.addWidget(self.updates_page)                                           # 3
-        self.servers_page = ServersPage()
+        self.servers_page = ServersPage()  # Твой класс
         self.pages.addWidget(self.servers_page)                                           # 4
-        self.pages.addWidget(self.create_page("⚙️ Настройки лаунчера"))                   # 5
-        self.minecraft_page = MinecraftLauncherPage()
+
+        # Заменяем пустую страницу настроек на SettingsPage
+        self.settings_page = SettingsPage(self)
+        self.pages.addWidget(self.settings_page)                                         # 5
+
+        self.minecraft_page = MinecraftLauncherPage()  # Твой класс
         self.pages.addWidget(self.minecraft_page)                                         # 6
 
         main_layout.addWidget(sidebar)
         main_layout.addWidget(self.pages)
 
         self.button_group.buttonClicked.connect(self.on_button_clicked)
+        self.btn_home.setChecked(True)  # По умолчанию первая кнопка
 
-        self.launch_thread = LaunchThread()
+        # Поток запуска
+        self.launch_thread = LaunchThread()  # Твой класс
         self.launch_thread.state_update_signal.connect(self.state_update)
         self.launch_thread.progress_update_signal.connect(self.update_progress)
 
         self.minecraft_page.start_button.clicked.connect(self.launch_game)
+
+        # Применяем сохранённые настройки UI
+        self.apply_settings()
 
     def create_page(self, text):
         page = QWidget()
@@ -1253,11 +1461,29 @@ class MainWindow(QMainWindow):
         self.minecraft_page.start_progress.setVisible(running)
         self.minecraft_page.start_progress_label.setVisible(running)
 
+    def apply_settings(self):
+        config = self.settings_page.config
+        theme = config.get("theme", "dark")
+        if theme == "dark":
+            self.setStyleSheet("background-color: #1e1e1e; color: white;")
+        else:
+            self.setStyleSheet("background-color: white; color: black;")
+
+        # TODO: переключение языка UI
+
     def launch_game(self):
+        config = self.settings_page.config
         version = self.minecraft_page.version_select.currentText()
         username = self.minecraft_page.username.text() or "player"
-        self.launch_thread.launch_setup_signal.emit(version, username)
-        self.launch_thread.start()
+
+        if config.get("launch_mode") == "java" and config.get("java_path"):
+            java_path = config["java_path"]
+            # Здесь надо реализовать запуск через java_path
+            print(f"Запуск Minecraft через Java: {java_path} с версией {version} и игроком {username}")
+            # Можно вызвать subprocess.Popen с нужными параметрами
+        else:
+            self.launch_thread.launch_setup_signal.emit(version, username)
+            self.launch_thread.start()
 
 if __name__ == "__main__":
     import sys
