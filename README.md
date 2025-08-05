@@ -1,70 +1,70 @@
 # SuperLauncher
 
-🎮 Лёгкий и быстрый лаунчер для Minecraft с автоматическим обновлением до последних версий.
+🎮 Lightweight and fast Minecraft launcher with automatic updates to the latest versions.
 
 ---
 
-## 🚀 Особенности
+## 🚀 Features
 
-- Поддержка последней версии Minecraft (на момент релиза — 1.21.8)  
-- Автоматическое обновление лаунчера и Minecraft при выходе новых версий от Mojang  
-- Возможность создания и управления своими локальными Minecraft-серверами прямо из лаунчера  
-- Панель управления серверами с настройками EULA, онлайн/оффлайн режимом и запуском/остановкой сервера  
-- Добавление любых серверов в список для быстрого подключения  
-- Поддержка ручного скачивания и управления версиями Minecraft (папка `versions`)  
-- Возможность вручную скачивать и использовать модификации Fabric, Forge и OptiFine  
-- Лаунчер не требует установки Java — для запуска Minecraft и серверов используется библиотека `minecraft-launcher-lib`  
-- Простой и минималистичный интерфейс  
-
----
-
-## 📁 Что в комплекте
-
-- `super_launcher.exe` — исполняемый файл лаунчера  
-- `assets/title.png` — иконка/логотип лаунчера
+- Supports the latest Minecraft version (at release — 1.21.8)  
+- Automatic updates for both launcher and Minecraft when new versions are released by Mojang  
+- Ability to create and manage your own local Minecraft servers directly from the launcher  
+- Server management panel with EULA settings, online/offline mode, and start/stop controls  
+- Add any servers to the list for quick connection  
+- Manual download and management of Minecraft versions (in the `versions` folder)  
+- Ability to manually download and use Fabric, Forge, and OptiFine mods  
+- Does not require Java installation — Minecraft and servers run using the `minecraft-launcher-lib` library  
+- Simple and minimalist interface  
 
 ---
 
-## 🔧 Технологии
+## 📁 Included
 
-- Язык: Python 3.x  
-- Компиляция: PyInstaller  
-- Для запуска Minecraft и серверов: библиотека [`minecraft-launcher-lib`](https://github.com/TechnicPack/MinecraftLauncherLib)
-
----
-
-## 📥 Как использовать
-
-1. Скачайте файл `super_launcher.exe` из раздела [релизов](https://github.com/ludvig2457/SuperLauncher/releases)  
-2. Запустите файл двойным кликом  
-3. Лаунчер автоматически загрузит последнюю версию Minecraft и запустит игру  
-4. Для создания и управления серверами используйте встроенную панель управления  
-5. При необходимости можно вручную скачивать версии Minecraft и модификации Fabric, Forge и OptiFine, помещая их в соответствующие папки  
-6. Наслаждайтесь игрой без лишних настроек и заморочек!
+- `super_launcher.exe` — executable launcher file  
+- `assets/title.png` — launcher icon/logo  
 
 ---
 
-## 🆕 Что нового в версии 1.4.0.5
+## 🔧 Technologies
 
-- ✅ Интеграция с Modrinth API для загрузки и управления модами прямо из лаунчера  
-- 🎨 Добавлена поддержка светлой и тёмной темы интерфейса  
-- ⚙️ Новый выбор способа запуска Minecraft: по умолчанию используется `minecraft-launcher-lib`, опционально можно указать путь к установленной Java  
-- 🐞 Исправлены мелкие баги и улучшена стабильность
-
----
-
-## ❌ Ограничения
-
-- На данный момент не реализована автоматическая поддержка Fabric, Forge и OptiFine — их нужно скачивать и подключать вручную  
-- Запуск Minecraft и серверов производится через `minecraft-launcher-lib`, поэтому внешняя Java не требуется  
+- Language: Python 3.x  
+- Compiled with: PyInstaller  
+- Minecraft and server launching via [`minecraft-launcher-lib`](https://github.com/TechnicPack/MinecraftLauncherLib)  
 
 ---
 
-## 🌟 Автор
+## 📥 How to use
 
-**Ludvig2457** — [GitHub профиль](https://github.com/ludvig2457)
+1. Download the `super_launcher.exe` file from the [releases](https://github.com/ludvig2457/SuperLauncher/releases) section  
+2. Run the file by double-clicking  
+3. The launcher will automatically download the latest Minecraft version and start the game  
+4. Use the built-in control panel to create and manage servers  
+5. If needed, manually download Minecraft versions and Fabric, Forge, OptiFine mods by placing them in the appropriate folders  
+6. Enjoy playing without complicated setup and hassle!
 
 ---
 
-Спасибо за использование SuperLauncher!  
-Если есть идеи или баги — создавайте issue или пишите в PR.
+## 🆕 What’s new in version 1.4.0.5
+
+- ✅ Integration with Modrinth API for downloading and managing mods directly from the launcher  
+- 🎨 Added support for light and dark UI themes  
+- ⚙️ New Minecraft launch method option: by default uses `minecraft-launcher-lib`, optionally you can specify a path to installed Java  
+- 🐞 Fixed minor bugs and improved stability  
+
+---
+
+## ❌ Limitations
+
+- Automatic support for Fabric, Forge, and OptiFine mods is not yet implemented — they must be downloaded and installed manually  
+- Minecraft and servers are launched via `minecraft-launcher-lib`, so external Java installation is not required  
+
+---
+
+## 🌟 Author
+
+**Ludvig2457** — [GitHub profile](https://github.com/ludvig2457)
+
+---
+
+Thank you for using SuperLauncher!  
+If you have ideas or find bugs, please create an issue or submit a PR.
