@@ -8,12 +8,13 @@ from PyQt6.QtWidgets import (
     QCheckBox, QFormLayout, QListWidget, QListWidgetItem, QTextEdit, QSpinBox,
     QRadioButton, QFileDialog
 )
-from PyQt6.QtGui import QPixmap, QCursor, QGuiApplication
+from PyQt6.QtGui import QPixmap, QCursor, QGuiApplication, QIcon
 
 from minecraft_launcher_lib.utils import get_minecraft_directory, get_version_list
 from minecraft_launcher_lib.install import install_minecraft_version
 from minecraft_launcher_lib.command import get_minecraft_command
 from tqdm import tqdm
+from pypresence import Presence
 
 from random_username.generate import generate_username
 from uuid import uuid1
@@ -25,6 +26,7 @@ import json
 import shutil
 import psutil
 import zipfile
+import time
 
 CONFIG_FILE = "settings.json"
 
@@ -331,6 +333,43 @@ class ModDownloadThread(QThread):
             self.finished.emit(self.save_path)
         except Exception as e:
             self.finished.emit(f"ERROR: {e}")
+
+# class DiscordRPCThread(threading.Thread):
+#     def __init__(self, main_window, client_id=None):
+#         super().__init__()
+#         self.client_id = client_id or "YOUR_CLIENT_ID_HERE"  # НЕ выкладывай реальный ID
+#         self.rpc = None
+#         self.main_window = main_window
+#         self.running = True
+
+#     def run(self):
+#         try:
+#             from pypresence import Presence  # импорт внутри try
+#             self.rpc = Presence(self.client_id)
+#             self.rpc.connect()
+#             while self.running:
+#                 current_page = self.main_window.pages.currentIndex()
+#                 page_names = ["Home", "Mods", "News", "Updates", "Servers", "Settings", "Minecraft"]
+#                 details = f"На странице: {page_names[current_page]}"
+#                 state = "Суперлаунчер 1.4.0.5"
+#                 self.rpc.update(
+#                     details=details,
+#                     state=state,
+#                     large_image="superlauncher",
+#                     small_image="minecraft",
+#                     start=time.time()
+#                 )
+#                 time.sleep(15)
+#         except Exception as e:
+#             print(f"Discord RPC error: {e}")
+
+#     def stop(self):
+#         self.running = False
+#         if self.rpc:
+#             try:
+#                 self.rpc.close()
+#             except Exception:
+#                 pass
 
 class ModsPage(QWidget):
     def __init__(self):
@@ -1333,49 +1372,43 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("SuperLauncher 1.4.0.5")
+        self.setWindowIcon(QIcon("assets/icon.png"))
         self.resize(1080, 720)
 
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         central_widget.setStyleSheet("background-color: #1e1e1e;")
-
         main_layout = QHBoxLayout(central_widget)
 
+        # Sidebar
         sidebar = QFrame()
         sidebar.setFixedWidth(110)
         sidebar.setStyleSheet("""
-        QFrame {
-            background-color: #121212;
-            border-radius: 30px;
-            margin: 20px 10px;
-        }
-        QPushButton {
-            background-color: transparent;
-            color: white;
-            font-size: 26px;
-            padding: 10px;
-            border: none;
-            outline: none;
-        }
-        QPushButton:focus {
-            outline: none;
-            border: none;
-        }
-        QPushButton:hover {
-            background-color: #3a3a3a;
-            border-radius: 12px;
-        }
-        QPushButton:checked {
-            background-color: #4facfe;
-            color: black;
-            border-radius: 16px;
-            font-weight: bold;
-        }
+            QFrame {
+                background-color: #121212;
+                border-radius: 30px;
+                margin: 20px 10px;
+            }
+            QPushButton {
+                background-color: transparent;
+                color: white;
+                font-size: 26px;
+                padding: 10px;
+                border: none;
+            }
+            QPushButton:hover {
+                background-color: #3a3a3a;
+                border-radius: 12px;
+            }
+            QPushButton:checked {
+                background-color: #4facfe;
+                color: black;
+                border-radius: 16px;
+                font-weight: bold;
+            }
         """)
-
         sidebar_layout = QVBoxLayout(sidebar)
         sidebar_layout.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignHCenter)
-        sidebar_layout.setContentsMargins(0, 20, 0, 20)
         sidebar_layout.setSpacing(20)
 
         # Кнопки
@@ -1389,54 +1422,47 @@ class MainWindow(QMainWindow):
 
         self.button_group = QButtonGroup()
         self.button_group.setExclusive(True)
-
         buttons = [
             self.btn_home, self.btn_builds, self.btn_news,
             self.btn_updates, self.btn_servers,
             self.btn_settings, self.btn_minecraft
         ]
-
         for i, btn in enumerate(buttons):
             btn.setCheckable(True)
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
             self.button_group.addButton(btn, i)
             sidebar_layout.addWidget(btn)
-
         sidebar_layout.addStretch()
 
+        # Pages
         self.pages = QStackedWidget()
-        self.pages.addWidget(self.create_page("🏠 Добро пожаловать в SuperLauncher!"))      # 0
-        self.builds_page = ModsPage()  # Твой класс, предполагается определён
-        self.pages.addWidget(self.builds_page)  # 1
-        self.news_page = NewsPage()  # Твой класс
-        self.pages.addWidget(self.news_page)                                               # 2
-        self.updates_page = UpdatesPage()  # Твой класс
-        self.pages.addWidget(self.updates_page)                                           # 3
-        self.servers_page = ServersPage()  # Твой класс
-        self.pages.addWidget(self.servers_page)                                           # 4
-
-        # Заменяем пустую страницу настроек на SettingsPage
+        self.pages.addWidget(self.create_page("🏠 Добро пожаловать в SuperLauncher!"))  # 0
+        self.pages.addWidget(ModsPage())      # 1
+        self.pages.addWidget(NewsPage())      # 2
+        self.pages.addWidget(UpdatesPage())   # 3
+        self.pages.addWidget(ServersPage())   # 4
         self.settings_page = SettingsPage(self)
-        self.pages.addWidget(self.settings_page)                                         # 5
-
-        self.minecraft_page = MinecraftLauncherPage()  # Твой класс
-        self.pages.addWidget(self.minecraft_page)                                         # 6
+        self.pages.addWidget(self.settings_page)  # 5
+        self.pages.addWidget(MinecraftLauncherPage())  # 6
 
         main_layout.addWidget(sidebar)
         main_layout.addWidget(self.pages)
 
         self.button_group.buttonClicked.connect(self.on_button_clicked)
-        self.btn_home.setChecked(True)  # По умолчанию первая кнопка
+        self.btn_home.setChecked(True)
 
-        # Поток запуска
-        self.launch_thread = LaunchThread()  # Твой класс
+        # Потоки
+        self.launch_thread = LaunchThread()
         self.launch_thread.state_update_signal.connect(self.state_update)
         self.launch_thread.progress_update_signal.connect(self.update_progress)
+        self.pages.widget(6).start_button.clicked.connect(self.launch_game)
 
-        self.minecraft_page.start_button.clicked.connect(self.launch_game)
-
-        # Применяем сохранённые настройки UI
+        # Применяем настройки
         self.apply_settings()
+
+        # Discord RPC — безопасный вариант
+        # self.discord_rpc_thread = DiscordRPCThread(self)  # не создаем реальный объект
+        # self.discord_rpc_thread.start()                   # не запускаем
 
     def create_page(self, text):
         page = QWidget()
@@ -1452,38 +1478,41 @@ class MainWindow(QMainWindow):
         self.pages.setCurrentIndex(idx)
 
     def update_progress(self, value, max_value, label):
-        self.minecraft_page.start_progress.setMaximum(max_value)
-        self.minecraft_page.start_progress.setValue(value)
-        self.minecraft_page.start_progress_label.setText(label)
+        page = self.pages.widget(6)
+        page.start_progress.setMaximum(max_value)
+        page.start_progress.setValue(value)
+        page.start_progress_label.setText(label)
 
     def state_update(self, running):
-        self.minecraft_page.start_button.setDisabled(running)
-        self.minecraft_page.start_progress.setVisible(running)
-        self.minecraft_page.start_progress_label.setVisible(running)
+        page = self.pages.widget(6)
+        page.start_button.setDisabled(running)
+        page.start_progress.setVisible(running)
+        page.start_progress_label.setVisible(running)
 
     def apply_settings(self):
-        config = self.settings_page.config
-        theme = config.get("theme", "dark")
+        theme = self.settings_page.config.get("theme", "dark")
         if theme == "dark":
             self.setStyleSheet("background-color: #1e1e1e; color: white;")
         else:
             self.setStyleSheet("background-color: white; color: black;")
 
-        # TODO: переключение языка UI
-
     def launch_game(self):
+        page = self.pages.widget(6)
         config = self.settings_page.config
-        version = self.minecraft_page.version_select.currentText()
-        username = self.minecraft_page.username.text() or "player"
+        version = page.version_select.currentText()
+        username = page.username.text() or "player"
 
         if config.get("launch_mode") == "java" and config.get("java_path"):
             java_path = config["java_path"]
-            # Здесь надо реализовать запуск через java_path
             print(f"Запуск Minecraft через Java: {java_path} с версией {version} и игроком {username}")
-            # Можно вызвать subprocess.Popen с нужными параметрами
         else:
             self.launch_thread.launch_setup_signal.emit(version, username)
             self.launch_thread.start()
+
+    def closeEvent(self, event):
+        # if hasattr(self, 'discord_rpc_thread'):
+        #     self.discord_rpc_thread.stop()  # безопасно не вызываем
+        super().closeEvent(event)
 
 if __name__ == "__main__":
     import sys
