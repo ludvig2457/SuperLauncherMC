@@ -1,0 +1,1 @@
+v1.4.0.7=https://github.com/ludvig2457/SuperLauncher/releases/download/v1.4.0.7/SuperLauncher1.4.0.7.exe
