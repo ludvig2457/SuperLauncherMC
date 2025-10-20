@@ -2,7 +2,7 @@
 
 import sys
 import os
-from PyQt6.QtCore import Qt, QThread, pyqtSignal, QSize, QTimer
+from PyQt6.QtCore import Qt, QThread, pyqtSignal, QSize, QTimer, QPropertyAnimation, QEasingCurve, pyqtProperty
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QFrame, QStackedWidget, QButtonGroup,
@@ -10,7 +10,7 @@ from PyQt6.QtWidgets import (
     QMessageBox, QScrollArea, QDialog, QCheckBox, QFormLayout,
     QListWidget, QListWidgetItem, QRadioButton, QFileDialog,
 )
-from PyQt6.QtGui import QPixmap, QCursor, QIcon
+from PyQt6.QtGui import QPixmap, QCursor, QIcon, QPainter, QBrush, QPen, QLinearGradient, QColor
 from minecraft_launcher_lib.utils import get_minecraft_directory, get_version_list
 from minecraft_launcher_lib.install import install_minecraft_version
 from minecraft_launcher_lib.command import get_minecraft_command
@@ -219,6 +219,7 @@ translations = {
     }
 }
 
+
 def load_config():
     if os.path.exists(CONFIG_FILE):
         try:
@@ -235,12 +236,14 @@ def load_config():
         "launch_mode": "launcher_lib"
     }
 
+
 def save_config(config):
     try:
         with open(CONFIG_FILE, "w", encoding="utf-8") as f:
             json.dump(config, f, ensure_ascii=False, indent=4)
     except Exception as e:
         print("Ошибка сохранения настроек:", e)
+
 
 MODRINTH_API = "https://api.modrinth.com/v2"
 
@@ -269,6 +272,232 @@ if not os.path.isfile(profile_path):
     print("Empty launcher_profiles.json created")
 else:
     print("launcher_profiles.json already exists")
+
+
+class AnimatedButton(QPushButton):
+    def __init__(self, text="", parent=None):
+        super().__init__(text, parent)
+        self._animation_progress = 0
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setFixedHeight(45)
+
+        self.animation = QPropertyAnimation(self, b"animation_progress")
+        self.animation.setDuration(300)
+        self.animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+
+    def get_animation_progress(self):
+        return self._animation_progress
+
+    def set_animation_progress(self, value):
+        self._animation_progress = value
+        self.update()
+
+    animation_progress = pyqtProperty(float, get_animation_progress, set_animation_progress)
+
+    def enterEvent(self, event):
+        self.animation.setStartValue(0)
+        self.animation.setEndValue(1)
+        self.animation.start()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self.animation.setStartValue(1)
+        self.animation.setEndValue(0)
+        self.animation.start()
+        super().leaveEvent(event)
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        gradient = QLinearGradient(0, 0, self.width(), 0)
+        gradient.setColorAt(0, QColor("#667eea"))
+        gradient.setColorAt(1, QColor("#764ba2"))
+
+        if self._animation_progress > 0:
+            bg_color = QColor(47, 47, 47)
+            painter.setBrush(QBrush(bg_color))
+            painter.setPen(QPen(QColor(79, 172, 254), 2))
+            painter.drawRoundedRect(1, 1, self.width() - 2, self.height() - 2, 8, 8)
+
+            fill_width = int(self.width() * self._animation_progress)
+            painter.setBrush(QBrush(gradient))
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.drawRoundedRect(1, 1, fill_width, self.height() - 2, 8, 8)
+        else:
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.setPen(QPen(QColor(79, 172, 254), 2))
+            painter.drawRoundedRect(1, 1, self.width() - 2, self.height() - 2, 8, 8)
+
+        painter.setPen(QPen(QColor(255, 255, 255)))
+        painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, self.text())
+        painter.end()
+
+
+class GlassFrame(QFrame):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setStyleSheet("""
+            GlassFrame {
+                background: rgba(25, 25, 35, 0.85);
+                border: 1px solid rgba(255, 255, 255, 0.15);
+                border-radius: 20px;
+            }
+        """)
+
+
+class ModernSidebar(QWidget):
+    def __init__(self, main_window, parent=None):
+        super().__init__(parent)
+        self.main_window = main_window
+        self.setFixedWidth(70)
+        self.expanded_width = 220
+        self.is_expanded = False
+
+        self.setStyleSheet("""
+            ModernSidebar {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 rgba(20, 20, 30, 0.95), 
+                    stop:1 rgba(35, 35, 45, 0.95));
+                border-right: 1px solid rgba(255, 255, 255, 0.1);
+                border-radius: 20px 0 0 20px;
+            }
+        """)
+
+        layout = QVBoxLayout()
+        layout.setContentsMargins(5, 15, 5, 15)
+        layout.setSpacing(8)
+
+        self.burger_btn = AnimatedButton("☰")
+        self.burger_btn.setFixedSize(55, 55)
+        self.burger_btn.clicked.connect(self.toggle_expand)
+        layout.addWidget(self.burger_btn)
+
+        layout.addSpacing(25)
+
+        self.nav_buttons = []
+        self.nav_items = [
+            ("🏠", "Главная", "#ff6b6b"),
+            ("🧩", "Моды", "#4ecdc4"),
+            ("📢", "Новости", "#45b7d1"),
+            ("🔄", "Обновления", "#96ceb4"),
+            ("🖧", "Серверы", "#feca57"),
+            ("⚙️", "Настройки", "#ff9ff3"),
+            ("⛏️", "Minecraft", "#54a0ff")
+        ]
+
+        for icon, text, color in self.nav_items:
+            btn = self.create_nav_button(icon, text, color)
+            self.nav_buttons.append(btn)
+            layout.addWidget(btn)
+
+        layout.addStretch()
+
+        self.setLayout(layout)
+
+        self.animation = QPropertyAnimation(self, b"minimumWidth")
+        self.animation.setDuration(350)
+        self.animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+
+    def create_nav_button(self, icon, text, color):
+        btn = QPushButton(f"  {icon}")
+        btn.setFixedHeight(55)
+        btn.setCheckable(True)
+        btn.setProperty("color", color)
+        btn.setProperty("full_text", f"  {icon}  {text}")
+        btn.setProperty("short_text", f"  {icon}")
+
+        btn.setStyleSheet(f"""
+            QPushButton {{
+                background: transparent;
+                border: none;
+                color: white;
+                font-size: 22px;
+                text-align: left;
+                padding-left: 12px;
+                border-radius: 12px;
+                font-weight: bold;
+            }}
+            QPushButton:hover {{
+                background: rgba(255, 255, 255, 0.08);
+                border: 1px solid rgba(255, 255, 255, 0.2);
+            }}
+            QPushButton:checked {{
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #667eea,
+                    stop:1 #764ba2);
+                border: 1px solid qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #667eea,
+                    stop:1 #764ba2);
+            }}
+        """)
+
+        btn.clicked.connect(lambda checked, idx=len(self.nav_buttons): self.on_nav_clicked(idx))
+        return btn
+
+    def on_nav_clicked(self, index):
+        self.main_window.pages.setCurrentIndex(index)
+        for i, btn in enumerate(self.nav_buttons):
+            btn.setChecked(i == index)
+
+    def toggle_expand(self):
+        self.is_expanded = not self.is_expanded
+
+        if self.is_expanded:
+            self.animation.setStartValue(70)
+            self.animation.setEndValue(self.expanded_width)
+            for btn in self.nav_buttons:
+                btn.setText(btn.property("full_text"))
+        else:
+            self.animation.setStartValue(self.expanded_width)
+            self.animation.setEndValue(70)
+            for btn in self.nav_buttons:
+                btn.setText(btn.property("short_text"))
+
+        self.animation.start()
+
+
+class GradientLabel(QLabel):
+    def __init__(self, text="", parent=None):
+        super().__init__(text, parent)
+        self._animation_progress = 0
+
+        self.animation = QPropertyAnimation(self, b"animation_progress")
+        self.animation.setDuration(2000)
+        self.animation.setLoopCount(-1)
+        self.animation.setStartValue(0)
+        self.animation.setEndValue(1)
+
+    def get_animation_progress(self):
+        return self._animation_progress
+
+    def set_animation_progress(self, value):
+        self._animation_progress = value
+        self.update()
+
+    animation_progress = pyqtProperty(float, get_animation_progress, set_animation_progress)
+
+    def showEvent(self, event):
+        self.animation.start()
+        super().showEvent(event)
+
+    def hideEvent(self, event):
+        self.animation.stop()
+        super().hideEvent(event)
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        gradient = QLinearGradient(0, 0, self.width(), 0)
+        gradient.setColorAt(0, QColor("#667eea"))
+        gradient.setColorAt(0.5, QColor("#764ba2"))
+        gradient.setColorAt(1, QColor("#667eea"))
+
+        painter.setPen(QPen(QBrush(gradient), 2))
+        painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, self.text())
+        painter.end()
+
 
 class LaunchThread(QThread):
     launch_setup_signal = pyqtSignal(str, str)
@@ -341,6 +570,7 @@ class LaunchThread(QThread):
         finally:
             self.state_update_signal.emit(False)
 
+
 # Функция возвращает все версии без фильтрации (Vanilla + Snapshots + Fabric + Forge)
 def get_all_versions():
     versions = get_version_list()  # vanilla + snapshots
@@ -352,6 +582,7 @@ def get_all_versions():
                 if not any(v['id'] == folder for v in versions):
                     versions.append({'id': folder})
     return versions
+
 
 class MinecraftLauncherPage(QWidget):
     def __init__(self, parent=None):
@@ -462,6 +693,7 @@ class MinecraftLauncherPage(QWidget):
         if not versions:
             versions.append({'id': 'No versions available'})
         return versions
+
 
 class SettingsPage(QWidget):
     def __init__(self, parent=None):
@@ -598,6 +830,7 @@ class SettingsPage(QWidget):
         save_config(self.config)
         self.update_texts()
 
+
 class ModDownloadThread(QThread):
     progress = pyqtSignal(int)
     finished = pyqtSignal(str)
@@ -624,6 +857,7 @@ class ModDownloadThread(QThread):
             self.finished.emit(self.save_path)
         except Exception as e:
             self.finished.emit(f"ERROR: {e}")
+
 
 class DiscordRPCThread(threading.Thread):
     def __init__(self, main_window):
@@ -675,6 +909,7 @@ class DiscordRPCThread(threading.Thread):
                 print("Discord RPC closed successfully.")
             except Exception as e:
                 print(f"Error closing Discord RPC: {e}")
+
 
 class ModsPage(QWidget):
     def __init__(self, parent=None):
@@ -873,6 +1108,7 @@ class ModsPage(QWidget):
             QMessageBox.information(self, self.tr("Done"),
                                     f"{self.tr('All mods deleted')}: {deleted}")
 
+
 class NewsPage(QWidget):
     def __init__(self, parent=None, language="en"):
         super().__init__(parent)
@@ -903,7 +1139,8 @@ class NewsPage(QWidget):
         self.news_list = [
             ("2025-08-12 v1.4.0.7", "Добавлен Discord RPC"),
             ("2025-07-24 v1.4.0.5", "Добавлена поддержка скачивания модов из Modrind и настроек лаунчера"),
-            ("2025-07-23 v1.4.0.4", "Добавлена возможность создавать и управлять локальными Minecraft-серверами прямо из лаунчера..."),
+            ("2025-07-23 v1.4.0.4",
+             "Добавлена возможность создавать и управлять локальными Minecraft-серверами прямо из лаунчера..."),
             ("2025-07-23 v1.4.0.3", "Добавлен новый дизайн и восстановлен код"),
             ("2025-06-26 v1.4.0.2", "Добавлен новый дизайн, но утерян код"),
             ("2025-06-26 v1.4.0.1", "Исправлены баги, но дизайн устаревший"),
@@ -944,7 +1181,9 @@ class NewsPage(QWidget):
         self.update_texts()
         self.populate_news()
 
+
 CURRENT_VERSION = "v1.4.0.5"
+
 
 class UpdateDownloadThread(QThread):
     progress = pyqtSignal(int)
@@ -1075,6 +1314,7 @@ class UpdatesPage(QWidget):
         subprocess.Popen([str(result)], close_fds=True)
         QApplication.quit()
 
+
 class CreateServerDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -1146,6 +1386,7 @@ class CreateServerDialog(QDialog):
         self.server_core = core
         self.accept()
 
+
 class DownloadThread(QThread):
     progress_changed = pyqtSignal(int)  # проценты
     finished = pyqtSignal()
@@ -1210,6 +1451,7 @@ class DownloadThread(QThread):
 
         else:
             raise Exception(f"Ядро {core} не поддерживается")
+
 
 class ServerControlDialog(QDialog):
     def __init__(self, server_name, server_path, parent=None):
@@ -1276,7 +1518,8 @@ class ServerControlDialog(QDialog):
 
     def load_settings(self):
         eula_path = os.path.join(self.server_path, "eula.txt")
-        self.checkbox_eula.setChecked(os.path.isfile(eula_path) and "eula=true" in open(eula_path, "r", encoding="utf-8").read().lower())
+        self.checkbox_eula.setChecked(
+            os.path.isfile(eula_path) and "eula=true" in open(eula_path, "r", encoding="utf-8").read().lower())
 
         prop_path = os.path.join(self.server_path, "server.properties")
         online_mode = True
@@ -1345,16 +1588,20 @@ class ServerControlDialog(QDialog):
                             f.write(chunk)
                 os.system(f'powershell -Command "Unblock-File -Path \'{msi_path}\'"')
             except Exception as e:
-                QMessageBox.critical(self, self.tr("Download error"), self.tr("Failed to download playit MSI") + f":\n{e}")
+                QMessageBox.critical(self, self.tr("Download error"),
+                                     self.tr("Failed to download playit MSI") + f":\n{e}")
                 return False
 
         try:
-            result = subprocess.run(["msiexec", "/i", msi_path, "/quiet", "/qn"], capture_output=True, text=True, shell=False)
+            result = subprocess.run(["msiexec", "/i", msi_path, "/quiet", "/qn"], capture_output=True, text=True,
+                                    shell=False)
             if result.returncode != 0:
                 msg = QMessageBox(self)
                 msg.setIcon(QMessageBox.Icon.Critical)
                 msg.setWindowTitle(self.tr("Installation error"))
-                msg.setText(self.tr("Installation failed with code") + f" {result.returncode}:\n{result.stderr.strip()}\n\n" + self.tr("Try opening the file manually:"))
+                msg.setText(self.tr(
+                    "Installation failed with code") + f" {result.returncode}:\n{result.stderr.strip()}\n\n" + self.tr(
+                    "Try opening the file manually:"))
 
                 btn_copy = QPushButton(self.tr("Copy MSI path"))
                 btn_copy.clicked.connect(lambda: QApplication.clipboard().setText(msi_path))
@@ -1439,6 +1686,7 @@ class ServerControlDialog(QDialog):
         else:
             QMessageBox.information(self, self.tr("Info"), self.tr("Server is not running."))
             self.update_buttons()
+
 
 class ServersPage(QWidget):
     def __init__(self, parent=None):
@@ -1667,98 +1915,78 @@ pause
                     except Exception as e:
                         QMessageBox.critical(self, self.tr("Error"), f"{self.tr('Failed to delete folder')}:\n{e}")
 
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("SuperLauncher 1.4.0.8")
+        self.setWindowTitle("SuperLauncher 1.4.0.9")
         self.setWindowIcon(QIcon("/home/artem/Downloads/LudvigAI/assets/icon.png"))
-        self.resize(1080, 720)
+        self.resize(1200, 800)
 
-        # Центральный виджет
-        central_widget = QWidget()
+        # Включаем прозрачность для эффекта стекла
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setStyleSheet("background: transparent;")
+
+        # Центральный виджет с эффектом стекла
+        central_widget = GlassFrame()
         self.setCentralWidget(central_widget)
-        central_widget.setStyleSheet("background-color: #1e1e1e;")
-        main_layout = QHBoxLayout(central_widget)
 
-        # Sidebar
-        sidebar = QFrame()
-        sidebar.setFixedWidth(110)
-        sidebar.setStyleSheet("""
-            QFrame { 
-                background-color: #111111; 
-                border-radius: 30px; 
-                margin: 20px 10px; 
-            }
-            QPushButton { 
-                background-color: transparent; 
-                color: white; 
-                font-size: 26px; 
-                padding: 10px; 
-                border: none; 
-            }
-            QPushButton:hover { 
-                background-color: #3a3a3a; 
-                border-radius: 12px; 
-            }
-            QPushButton:checked { 
-                background-color: #4facfe; 
-                color: black; 
-                border-radius: 16px; 
-                font-weight: bold; 
+        main_layout = QHBoxLayout(central_widget)
+        main_layout.setContentsMargins(15, 15, 15, 15)
+        main_layout.setSpacing(0)
+
+        # Современная боковая панель
+        self.sidebar = ModernSidebar(self)
+        main_layout.addWidget(self.sidebar)
+
+        # Контейнер страниц
+        self.pages = QStackedWidget()
+        self.pages.setStyleSheet("""
+            QStackedWidget {
+                background: rgba(30, 30, 40, 0.9);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                border-radius: 20px;
+                margin: 5px;
             }
         """)
-        sidebar_layout = QVBoxLayout(sidebar)
-        sidebar_layout.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignHCenter)
-        sidebar_layout.setSpacing(20)
-
-        # Кнопки
-        self.btn_home = QPushButton("🏠")
-        self.btn_builds = QPushButton("🧩")
-        self.btn_news = QPushButton("📢")
-        self.btn_updates = QPushButton("🔄")
-        self.btn_servers = QPushButton("🖧")
-        self.btn_settings = QPushButton("⚙️")
-        self.btn_minecraft = QPushButton("⛏️")
-
-        self.button_group = QButtonGroup()
-        self.button_group.setExclusive(True)
-        buttons = [
-            self.btn_home, self.btn_builds, self.btn_news, self.btn_updates,
-            self.btn_servers, self.btn_settings, self.btn_minecraft
-        ]
-        for i, btn in enumerate(buttons):
-            btn.setCheckable(True)
-            btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            self.button_group.addButton(btn, i)
-            sidebar_layout.addWidget(btn)
-        sidebar_layout.addStretch()
-
-        # Pages
-        self.pages = QStackedWidget()
-
-        # Домашняя страница
-        self.home_page = self.create_page(f"🏠 {self.tr('Welcome to SuperLauncher!')}")
-        self.pages.addWidget(self.home_page)  # 0
-
-        self.pages.addWidget(ModsPage())         # 1
-        self.pages.addWidget(NewsPage())         # 2
-        self.pages.addWidget(UpdatesPage())      # 3
-        self.pages.addWidget(ServersPage())      # 4
-        self.settings_page = SettingsPage(self)
-        self.pages.addWidget(self.settings_page) # 5
-        self.pages.addWidget(MinecraftLauncherPage())  # 6
-
-        main_layout.addWidget(sidebar)
         main_layout.addWidget(self.pages)
 
-        self.button_group.buttonClicked.connect(self.on_button_clicked)
-        self.btn_home.setChecked(True)
+        # Добавляем страницы
+        self.pages.addWidget(self.create_modern_page("🏠 Добро пожаловать в SuperLauncher!"))
+        self.pages.addWidget(ModsPage())
+        self.pages.addWidget(NewsPage())
+        self.pages.addWidget(UpdatesPage())
+        self.pages.addWidget(ServersPage())
+        self.settings_page = SettingsPage(self)
+        self.pages.addWidget(self.settings_page)
+
+        # Minecraft страница с обновлённой кнопкой
+        minecraft_page = MinecraftLauncherPage()
+        self.pages.addWidget(minecraft_page)
+
+        # Заменяем обычную кнопку на анимированную
+        if hasattr(minecraft_page, 'start_button'):
+            old_button = minecraft_page.start_button
+            new_button = AnimatedButton(self.tr("Play"))
+            new_button.setFixedHeight(50)
+            new_button.setStyleSheet("font-size: 16px; font-weight: bold;")
+            new_button.clicked.connect(self.launch_game)
+
+            # Заменяем кнопку в layout
+            layout = minecraft_page.layout()
+            for i in range(layout.count()):
+                item = layout.itemAt(i)
+                if item.widget() == old_button:
+                    layout.removeWidget(old_button)
+                    old_button.deleteLater()
+                    layout.insertWidget(i, new_button)
+                    minecraft_page.start_button = new_button
+                    break
 
         # Потоки для запуска Minecraft
         self.launch_thread = LaunchThread()
         self.launch_thread.state_update_signal.connect(self.state_update)
         self.launch_thread.progress_update_signal.connect(self.update_progress)
-        self.pages.widget(6).start_button.clicked.connect(self.launch_game)
 
         # Discord RPC
         self.discord_rpc_thread = DiscordRPCThread(self)
@@ -1767,6 +1995,69 @@ class MainWindow(QMainWindow):
         # Применяем настройки
         self.apply_settings()
 
+    def create_modern_page(self, text):
+        page = QWidget()
+        layout = QVBoxLayout(page)
+
+        # Градиентный заголовок
+        title_label = GradientLabel(text)
+        title_label.setStyleSheet("""
+            font-size: 32px; 
+            margin: 40px; 
+            font-weight: bold;
+            text-align: center;
+        """)
+        layout.addWidget(title_label)
+
+        # Дополнительный контент для главной страницы
+        content_label = QLabel("🚀 Самый современный лаунчер для Minecraft")
+        content_label.setStyleSheet("""
+            font-size: 18px; 
+            color: #cccccc; 
+            text-align: center;
+            margin: 20px;
+        """)
+        layout.addWidget(content_label)
+
+        # Статистика
+        stats_widget = QWidget()
+        stats_layout = QHBoxLayout(stats_widget)
+
+        stats = [
+            ("10K+", "Установок"),
+            ("4.8/5", "Рейтинг"),
+            ("50+", "Стран"),
+            ("24/7", "Поддержка")
+        ]
+
+        for value, label in stats:
+            stat_frame = QFrame()
+            stat_frame.setStyleSheet("""
+                QFrame {
+                    background: rgba(255, 255, 255, 0.05);
+                    border: 1px solid rgba(255, 255, 255, 0.1);
+                    border-radius: 10px;
+                    padding: 15px;
+                    margin: 5px;
+                }
+            """)
+            stat_layout = QVBoxLayout(stat_frame)
+
+            value_label = QLabel(value)
+            value_label.setStyleSheet("font-size: 24px; font-weight: bold; color: #4facfe;")
+            stat_layout.addWidget(value_label)
+
+            desc_label = QLabel(label)
+            desc_label.setStyleSheet("font-size: 12px; color: #888888;")
+            stat_layout.addWidget(desc_label)
+
+            stats_layout.addWidget(stat_frame)
+
+        layout.addWidget(stats_widget)
+        layout.addStretch()
+
+        return page
+
     # --- Метод перевода с безопасной проверкой settings_page ---
     def tr(self, key: str) -> str:
         lang = "ru"  # язык по умолчанию
@@ -1774,53 +2065,63 @@ class MainWindow(QMainWindow):
             lang = self.settings_page.config.get("language", "ru")
         return translations.get(lang, {}).get(key, key)
 
-    def create_page(self, text):
-        page = QWidget()
-        layout = QVBoxLayout(page)
-        label = QLabel(text)
-        label.setStyleSheet("font-size: 24px; margin: 30px; color: white;")
-        layout.addWidget(label)
-        layout.addStretch()
-        return page
-
     def on_button_clicked(self, button):
-        idx = self.button_group.id(button)
+        idx = self.sidebar.nav_buttons.index(button)
         self.pages.setCurrentIndex(idx)
+        for i, btn in enumerate(self.sidebar.nav_buttons):
+            btn.setChecked(i == idx)
 
     def update_progress(self, value, max_value, label):
-        page = self.pages.widget(6)
-        page.start_progress.setMaximum(max_value)
-        page.start_progress.setValue(value)
-        page.start_progress_label.setText(label)
+        minecraft_page = self.pages.widget(6)
+        if hasattr(minecraft_page, 'start_progress'):
+            minecraft_page.start_progress.setMaximum(max_value)
+            minecraft_page.start_progress.setValue(value)
+            minecraft_page.start_progress_label.setText(label)
 
     def state_update(self, running):
-        page = self.pages.widget(6)
-        page.start_button.setDisabled(running)
-        page.start_progress.setVisible(running)
-        page.start_progress_label.setVisible(running)
+        minecraft_page = self.pages.widget(6)
+        if hasattr(minecraft_page, 'start_button'):
+            minecraft_page.start_button.setDisabled(running)
+        if hasattr(minecraft_page, 'start_progress'):
+            minecraft_page.start_progress.setVisible(running)
+            minecraft_page.start_progress_label.setVisible(running)
 
     def apply_settings(self):
-        theme = self.settings_page.config.get("theme", "dark")
-        if theme == "dark":
-            self.setStyleSheet("background-color: #1e1e1e; color: white;")
-        else:
-            self.setStyleSheet("background-color: white; color: black;")
+        if hasattr(self, "settings_page"):
+            theme = self.settings_page.config.get("theme", "dark")
+            if theme == "dark":
+                self.setStyleSheet("""
+                    MainWindow {
+                        background: transparent;
+                    }
+                """)
+            else:
+                self.setStyleSheet("""
+                    MainWindow {
+                        background: rgba(255, 255, 255, 0.9);
+                    }
+                    GlassFrame {
+                        background: rgba(240, 240, 240, 0.9);
+                        border: 1px solid rgba(0, 0, 0, 0.1);
+                    }
+                """)
 
     def launch_game(self):
-        page = self.pages.widget(6)
-        config = self.settings_page.config
-        version = page.version_select.currentText()
-        username = page.username.text() or "player"
+        minecraft_page = self.pages.widget(6)
+        if hasattr(self, "settings_page"):
+            config = self.settings_page.config
+            version = minecraft_page.version_select.currentText()
+            username = minecraft_page.username.text() or "player"
 
-        if config.get("launch_mode") == "java" and config.get("java_path"):
-            java_path = config["java_path"]
-            print(f"Запуск Minecraft через Java: {java_path} с версией {version} и игроком {username}")
-        else:
-            self.launch_thread.launch_setup_signal.emit(version, username)
-            self.launch_thread.start()
+            if config.get("launch_mode") == "java" and config.get("java_path"):
+                java_path = config["java_path"]
+                print(f"Запуск Minecraft через Java: {java_path} с версией {version} и игроком {username}")
+            else:
+                self.launch_thread.launch_setup_signal.emit(version, username)
+                self.launch_thread.start()
 
     def closeEvent(self, event):
-        if self.discord_rpc_thread:
+        if hasattr(self, "discord_rpc_thread") and self.discord_rpc_thread:
             self.discord_rpc_thread.stop()
         super().closeEvent(event)
 
@@ -1828,8 +2129,18 @@ class MainWindow(QMainWindow):
     def refresh_home_page(self):
         if hasattr(self, "home_page"):
             home_text = self.tr("Welcome to SuperLauncher!")
-            label = self.home_page.layout().itemAt(0).widget()
-            label.setText(f"🏠 {home_text}")
+            # Обновляем все текстовые элементы на главной странице
+            home_page = self.pages.widget(0)
+            if home_page:
+                title_label = home_page.layout().itemAt(0).widget()
+                if isinstance(title_label, GradientLabel):
+                    title_label.setText(f"🏠 {home_text}")
+
+                # Обновляем дополнительный контент
+                content_label = home_page.layout().itemAt(1).widget()
+                if content_label:
+                    content_label.setText(self.tr("🚀 The most modern Minecraft launcher"))
+
 
 if __name__ == "__main__":
     import sys
@@ -1839,5 +2150,3 @@ if __name__ == "__main__":
     window = MainWindow()
     window.show()
     sys.exit(app.exec())
-    
-
