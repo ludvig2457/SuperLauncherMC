@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 import sys
 import os
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QSize, QTimer
@@ -1838,3 +1840,4 @@ if __name__ == "__main__":
     window.show()
     sys.exit(app.exec())
     
+
