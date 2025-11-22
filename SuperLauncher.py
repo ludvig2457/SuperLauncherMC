@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-
 import sys
 import os
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QSize, QTimer, QPropertyAnimation, QEasingCurve, pyqtProperty
